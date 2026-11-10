@@ -48,6 +48,10 @@ def entries(readme):
     return result
 
 
+def linked_urls(entry):
+    return list(dict.fromkeys([entry['url']] + re.findall(r'\]\((https?://[^)]+)\)', entry.get('line', ''))))
+
+
 def packet(repo):
     sha = git(repo, 'rev-parse', 'HEAD').strip()
     readme = git(repo, 'show', f'{sha}:README.md')
@@ -179,35 +183,22 @@ def previews(data, raw, status):
             del lines[offset]
         else:
             name = row['newName'] or entry['name']
-            if not name.strip() or name != name.strip() or any(c in name for c in '[]()<>\r\n\t'):
+            if row['newName'] and (not name.strip() or name != name.strip() or any(c in name for c in '[]()<>\r\n\t')):
                 raise ValueError('Invalid entry name')
             url = row['newUrl'] or entry['url']
             description = row['newDescription'] or entry['description']
             if any(c in url for c in '()<>\r\n') or any(c in description for c in '\r\n'):
                 raise ValueError('Correction must be a single well-formed Markdown entry')
-            if (not description.strip() and row['newDescription']) or description != description.strip():
+            if row['newDescription'] and (not description.strip() or description != description.strip()):
                 raise ValueError('Correction description must be nonempty and trimmed')
             ending = '\r\n' if lines[offset].endswith('\r\n') else '\n' if lines[offset].endswith('\n') else ''
             original = ENTRY.fullmatch(entry['line'])
             separator, _ = parts(original)
             if row['newDescription'] and not separator: separator = ' - '
             replacement = f"{original['prefix']}{name}]({url}){separator}{description}" + ending
-            if name != entry['name'] and False:
-                start, end = offset, offset + 1
-                while start > 0 and ENTRY.fullmatch(lines[start-1].rstrip('\r\n')): start -= 1
-                while end < len(lines) and ENTRY.fullmatch(lines[end].rstrip('\r\n')): end += 1
-                peers = [ENTRY.fullmatch(lines[i].rstrip('\r\n'))['name'] for i in range(start,end) if i != offset]
-                if name.casefold() in [n.casefold() for n in peers]:
-                    raise ValueError('Rename would duplicate an entry name')
-                endings = ['\r\n' if line.endswith('\r\n') else '\n' if line.endswith('\n') else '' for line in lines[start:end]]
-                del lines[offset]
-                position = next((i for i in range(start,end-1) if ENTRY.fullmatch(lines[i].rstrip('\r\n'))['name'].casefold() > name.casefold()),end-1)
-                lines.insert(position,replacement)
-                lines[start:end] = [line.rstrip('\r\n') + ending for line, ending in zip(lines[start:end],endings)]
-            else:
-                if name != entry['name'] and any(e['section'] == entry['section'] and e['id'] != entry['id'] and e['name'].casefold() == name.casefold() for e in entries(readme)):
-                    raise ValueError('Rename would duplicate an entry name')
-                lines[offset] = replacement
+            if name != entry['name'] and any(e['section'] == entry['section'] and e['id'] != entry['id'] and e['name'].casefold() == name.casefold() for e in entries(readme)):
+                raise ValueError('Rename would duplicate an entry name')
+            lines[offset] = replacement
         updated = ''.join(lines)
         if updated == readme:
             continue
